@@ -2,3 +2,4 @@ pivoyager
 cmd/pivoyager
 .*.swp
 *.o
+*.bin

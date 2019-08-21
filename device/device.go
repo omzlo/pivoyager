@@ -1,12 +1,9 @@
 package device
 
 import (
-	//	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/omzlo/pivoyager/i2c"
-	//	"os"
-	//	"strconv"
 	"strings"
 	"time"
 )
@@ -16,8 +13,8 @@ type DeviceStatus byte
 /*  TODO: DeviceStatus and ConfiguratioByte should probably be factored together */
 
 var (
-	stateBits = [8]string{"pg", "stat1", "stat2", "pg2", "inits", "!B5!", "alarm", "button"}
-	batState  = [8]string{"err", "fault", "low battery", "charging", "err", "charge complete", "discharging", "no battery"}
+	stateBits = [8]string{"pg", "stat1", "stat2", "5v", "inits", "!B5!", "alarm", "button"}
+	batState  = [8]string{"n/a", "fault", "err", "charge complete", "low battery", "charging", "discharging", "no battery"}
 )
 
 func (s DeviceStatus) BatteryStateString() string {
@@ -69,22 +66,28 @@ func (s DeviceStatus) String() string {
 /*******/
 
 const (
-	REG_MODE     = 0
-	REG_STAT     = 1
-	REG_CONF     = 2
-	REG_PROG     = 3
-	REG_TIME     = 4
-	REG_DATE     = 8
-	REG_SET_TIME = 12
-	REG_SET_DATE = 16
-	REG_WATCH    = 20
-	REG_WAKE     = 22
-	REG_ALARM    = 24
-	REG_RES1     = 28
-	REG_VBAT     = 32
-	REG_VREF     = 34
-	REG_VREF_CAL = 36
-	REG_BOOT     = 38
+	REG_MODE      = 0
+	REG_STAT      = 1
+	REG_CONF      = 2
+	REG_PROG      = 3
+
+	REG_TIME      = 4
+	REG_DATE      = 8
+
+	REG_SET_TIME  = 12
+	REG_SET_DATE  = 16
+
+	REG_WATCH     = 20
+	REG_WAKE      = 22
+
+	REG_ALARM       = 24
+	REG_BOOT        = 28
+    REG_FW_VERSION  = 30
+
+	REG_VBAT      = 32
+	REG_VREF      = 34
+	REG_VREF_CAL  = 36
+	REG_LBO_TIMER = 38
 	//total size = 40
 )
 
@@ -93,22 +96,24 @@ const (
 )
 
 const (
-	CONF_I2C_WD      = 0x01
-	CONF_PIN_WD      = 0x02
-	CONF_WAKE_AFTER  = 0x04
-	CONF_WAKE_ALARM  = 0x08
-	CONF_WAKE_POWER  = 0x10
-	CONF_WAKE_BUTTON = 0x20
+	CONF_I2C_WD       = 0x01
+	CONF_PIN_WD       = 0x02
+	CONF_WAKE_AFTER   = 0x04
+	CONF_WAKE_ALARM   = 0x08
+	CONF_WAKE_POWER   = 0x10
+	CONF_WAKE_BUTTON  = 0x20
+    CONF_LBO_SHUTDOWN = 0x80
 )
 
 const (
+    PROG_BOOTLOADER   = 0x01
 	PROG_CLEAR_ALARM  = 0x10
 	PROG_CLEAR_BUTTON = 0x20
 	PROG_CALENDAR     = 0x40
 	PROG_ALARM        = 0x80
 )
 
-var conf_strings = []string{"i2c-watchdog", "gpio-watchdog", "timer-wakeup", "alarm-wakeup", "power-wakeup", "button-wakeup", "calendar", "alarm"}
+var conf_strings = []string{"i2c-watchdog", "gpio-watchdog", "timer-wakeup", "alarm-wakeup", "power-wakeup", "button-wakeup", "undefined", "low-battery-shutdown"}
 
 type ConfigurationByte byte
 
@@ -170,10 +175,19 @@ func Open(bootloader bool) (*Device, error) {
 	if r != 'N' && r != 'B' {
 		return nil, fmt.Errorf("Unrecognized signature byte 0x%02x. i2c device does not seem to be a pivoyager", r)
 	}
-	if bootloader && r != 'B' {
+	if (bootloader && r != 'B') || (!bootloader && r != 'N') {
 		return nil, ModeError
 	}
 	return &Device{bus, DEVICE_ADDRESS}, nil
+}
+
+func (dev *Device) FirmwareVersion() (string, error) {
+    var buf [2]byte
+
+    if err := dev.ReadBytes(dev.address, REG_FW_VERSION, buf[:]); err != nil {
+        return "", err
+    }
+    return fmt.Sprintf("%x.%02x", buf[1], buf[0]), nil
 }
 
 func (dev *Device) Time() (time.Time, error) {
@@ -227,9 +241,8 @@ func (dev *Device) Voltage() (float32, float32, error) {
 		return 0, 0, err
 	}
 	vbat = uint16(buf[0]) + (uint16(buf[1]) << 8)
-	vref = uint16(buf[1]) + (uint16(buf[2]) << 8)
-	vcal = uint16(buf[3]) + (uint16(buf[4]) << 8)
-	fmt.Printf(">> VBAT=%d VREF=%d VCAL=%d\n", vbat, vref, vcal)
+	vref = uint16(buf[2]) + (uint16(buf[3]) << 8)
+	vcal = uint16(buf[4]) + (uint16(buf[5]) << 8)
 	Ref := 3.3 * float32(vcal) / float32(vref)
 	return 2 * Ref * float32(vbat) / 4095.0, Ref, nil
 }
@@ -318,3 +331,25 @@ func (dev *Device) SetAlarm(a Alarm, conf byte) error {
 	}
 	return dev.Program(PROG_ALARM)
 }
+
+func (dev *Device) LowBatteryTimer() (uint16, error) {
+    var buf [2]byte
+
+    err := dev.ReadBytes(dev.address, REG_LBO_TIMER, buf[:])
+    if err != nil {
+        return 0, err
+    }
+    return uint16(buf[0]) + (uint16(buf[1]) << 8), nil
+}
+
+func (dev *Device) SetLowBatteryTimer(delay uint16, conf byte) error {
+    var buf [2]byte
+
+    buf[0] = byte(delay)
+    buf[1] = byte(delay >> 8)
+    if err := dev.WriteBytes(dev.address, REG_LBO_TIMER, buf[:]); err != nil {
+        return err
+    }
+    return dev.ModifyByte(dev.address, REG_CONF, conf, conf)
+}
+

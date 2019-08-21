@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+    "io/ioutil"
 )
 
 type Command struct {
@@ -73,7 +74,7 @@ func cmd_status(dev *device.Device, args []string) error {
 			return err
 		}
 		if (todo & DO_FLAGS) != 0 {
-			fmt.Printf("Status: %s\n", s)
+			fmt.Printf("Status(%d): %s\n", s, s)
 		}
 		if (todo & DO_BATTERY) != 0 {
 			fmt.Printf("Battery: %s\n", s.BatteryStateString())
@@ -208,6 +209,42 @@ func cmd_wakeup(dev *device.Device, args []string) error {
 	return nil
 }
 
+func cmd_low_battery_timer(dev *device.Device, args []string) error {
+    args = assert_argc(args, 0, 1)
+
+    if len(args) == 1 {
+        delay, err := strconv.ParseUint(args[0], 0, 16)
+        if err != nil {
+            return err
+        }
+
+        if err := dev.SetLowBatteryTimer(uint16(delay), device.CONF_LBO_SHUTDOWN); err != nil {
+            return err
+        }
+        fmt.Println("OK")
+    } else {
+        delay, err := dev.LowBatteryTimer()
+        if err != nil {
+            return err
+        }
+        conf, err := dev.Configuration()
+        if err != nil {
+            return err
+        }
+        conf = conf & device.CONF_LBO_SHUTDOWN
+        fmt.Printf("Shutdown: %d seconds after low battery detected\n", delay)
+        options := conf.ToStrings()
+        var res string
+        if len(options) == 0 {
+            res = "disabled"
+        } else {
+            res = strings.Join(options, " ")
+        }
+        fmt.Printf("Options: %s\n", res)
+    }
+    return nil
+}
+
 /*
 func cmd_battery(dev *device.Device, args []string) error {
 	s, err := dev.Status()
@@ -303,6 +340,74 @@ func cmd_clear(dev *device.Device, args []string) error {
 	return nil
 }
 
+func cmd_version(dev *device.Device, args []string) error {
+    _ = assert_argc(args, 0, 0)
+
+    fw_version, err := dev.FirmwareVersion()
+    if err!=nil {
+        return err
+    }
+    fmt.Printf("Sofware version: %s\n", PIVOYAGER_VERSION)
+    fmt.Printf("Firmware version: %s\n", fw_version)
+    return nil
+}
+
+func cmd_flash(dev *device.Device, args []string) error {
+    var length int
+    args = assert_argc(args, 1, 2, 3)
+
+    switch args[0] {
+    case "read":
+        if len(args)<2 {
+            return fmt.Errorf("Missing file name parameter")
+        }
+
+        fname := args[1]
+
+        if len(args)==3 {
+            l, err := strconv.ParseUint(args[2],0,32)
+            if err!=nil {
+                return err
+            }
+            length = int(l)
+        } else {
+            length = 24*1024
+        }
+        if length>24*1024 || length==0 {
+            return fmt.Errorf("Flash length must be greater than 0 and less than 24K.")
+        }
+        buf := make([]byte,length,length)
+        if err := dev.FlashRead(buf); err!=nil {
+            return err
+        }
+        if err := ioutil.WriteFile(fname,buf, 0644); err!=nil {
+            return err
+        }
+    case "write":
+        if len(args)<2 {
+            return fmt.Errorf("Missing file name parameter")
+        }
+
+        fname := args[1]
+
+        buf, err := ioutil.ReadFile(fname)
+        if err!=nil {
+            return err
+        }
+        if err := dev.FlashWrite(buf); err!=nil {
+            return err
+        }
+    case "exit":
+        if err := dev.FlashExit(); err!=nil {
+            return err
+        }
+    default:
+        return fmt.Errorf("Unrecognized subcommand '%s': valid subcommands for flash are 'read', 'write' and 'exit'.", args[0])
+    }
+    fmt.Println("OK")
+    return nil
+}
+
 var commands = []Command{
 	Command{"alarm", cmd_alarm, `Get current alarm date, or set it (alarm <alarm-pattern>).
                 The format of <alarm-pattern> is day-hour-minute-second, where:
@@ -332,16 +437,31 @@ var commands = []Command{
                 - "alarm-wakeup" enable wakeup on alarm.
                 - "power-wakeup" wakeup if USB power goes up (only if it was down during shutdown).
                 - "button-wakeup" wakeup if user presses button.
-				Note: "timer-wakeup" cancels "alarm-wakeup".
+                - "low-battery-shutdown" shutdown if the battery is low, after timer expires.
+                Note: "timer-wakeup" cancels "alarm-wakeup".
 	`},
-	Command{"help", nil, `Prints this message.
+    Command{"flash", cmd_flash, `Flash the new firmware file in 'bin' format.
+                Typical use is:
+                - 'flash write example.bin', this will write the firmware file example.bin into the pivoyager.
+                - 'flash exit', this will exit bootloader mode. 
+                Note: the PiVoyager must be in bootloader mode for flash commands to succeed.
+                      Bootloader mode is activated by first removing all power to the PiVoyager and
+                      then powering the device while simulaneously pressing the main button.
+                      Once in bootloader mode, the device leds will blink in sequence.
+    `},
+    Command{"help", nil, `Prints this message.
 	`},
+    Command{"low-battery-timer", cmd_low_battery_timer, `Get or set how much time to wait (in seconds) before shutting down when the battery is low.
+                Note: By default this timer is set to 60 seconds.
+    `},
 	Command{"status", cmd_status, `Get the current UPS status of the PiVoyager.
 				- "status flags" shows system status flags.
 				- "status battery" shows battery status (e.g. "charging").
 				- "status volatge" shows battery and reference voltage.
 				- "status" shows all of the above.
 	`},
+    Command{"version", cmd_version, `Print current software and firmware version"
+    `},
 	Command{"wakeup", cmd_wakeup, `Get wakeup information, or set wakeup time (wakeup <seconds>)
 				Note: "wakeup" sets an alarm, overriding any alarm previously set.
 	`},
@@ -379,7 +499,7 @@ func main() {
 
 	for _, command := range commands {
 		if command.Name == os.Args[1] {
-			pivoyager, err := device.Open(false)
+			pivoyager, err := device.Open(command.Name == "flash")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "failed to connect to pivoyager.\n")
 				fmt.Fprintf(os.Stderr, "Could not connect to i2c device: %s\n", err)
