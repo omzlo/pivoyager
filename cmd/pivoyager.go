@@ -457,7 +457,7 @@ var commands = []Command{
 	Command{"status", cmd_status, `Get the current UPS status of the PiVoyager.
 				- "status flags" shows system status flags.
 				- "status battery" shows battery status (e.g. "charging").
-				- "status volatge" shows battery and reference voltage.
+				- "status voltage" shows battery and reference voltage.
 				- "status" shows all of the above.
 	`},
     Command{"version", cmd_version, `Print current software and firmware version"
