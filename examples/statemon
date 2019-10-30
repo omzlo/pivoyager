@@ -7,21 +7,35 @@
 #
 # This is an example scripts and does not actually perform any action
 # Feel free to place your own commands in the appropriate sections
+#
+# I'm assuming pivoyager is in your path. Ajust if needed.
 
 function checkState {
-  output=$(pivoyager status flags | grep "pg");
-  oldstate=$state;
+  output=$(pivoyager status flags | grep "pg")
+  oldstate=$state
   if [[ ${output} != "" ]]; then
-    state="USB";
+    state="USB"
   else
-    state="Battery";
+    state="Battery"
   fi
   if [[ $oldstate == "" ]]; then
-    echo "Current State: $state";
+    echo "Current State: $state"
   elif [[ $oldstate != $state ]]; then
-    echo "State Changed to $state";
+    echo "State Changed to $state"
   fi
 }
+
+test=$(pivoyager version 2>&1 | grep -i 'not found')
+if [[ $test != '' ]]; then
+  echo "pivoyager was not found in your path."
+  echo "Please install it and try again."
+  exit 1
+fi
+
+echo ""
+echo "pivoyager statemon example"
+pivoyager version
+echo ""
 
 while true; do
 
@@ -31,7 +45,7 @@ while true; do
     oldstatus=$status
     status=$(pivoyager status battery)
     if [[ $oldstatus != $status ]]; then
-      echo $status;
+      echo $status
       # Place your commands here for when power switches to USB
 
 
@@ -40,9 +54,9 @@ while true; do
 
   elif [[ $state == "Battery" ]]; then
     oldstatus=$status
-    status=$(pivoyager status battery & pivoyager status voltage);
+    status=$(pivoyager status battery & pivoyager status voltage)
     if [[ $oldstatus != $status ]]; then
-      echo $status;
+      echo $status
       # Place your commands here for when power switches to Battery
 
 
@@ -54,4 +68,3 @@ while true; do
   sleep 5
 
 done
-
