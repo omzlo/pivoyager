@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# batterylife v1.0 by Robbie Ferguson // The Bald Nerd
+# https://baldnerd.com || https://nemslinux.com
+# Saves log files to /var/log/pivoyager/ to determine how long
+# your Raspberry Pi remains powered up
+# Simply run this script, then unplug your PiVoyager power cable
+# then wait as many hours as it takes to deplete the battery
+# Upon next boot, check the logs to calculate your battery life
+#
+# This is an example scripts and does not actually perform any action
+# Feel free to place your own commands in the appropriate sections
+#
+# I'm assuming pivoyager is in your path. Ajust if needed.
+
+function checkState {
+  output=$(pivoyager status flags | grep "pg")
+  oldstate=$state
+  if [[ ${output} != "" ]]; then
+    state="USB"
+  else
+    state="Battery"
+  fi
+  if [[ $oldstate == "" ]]; then
+    echo "Current State: $state"
+  elif [[ $oldstate != $state ]]; then
+    echo "State Changed to $state"
+  fi
+}
+
+if [[ $(pivoyager version 2>&1 | grep -i 'not found') != '' ]]; then
+  echo "pivoyager was not found in your path."
+  echo "Please install it and try again."
+  exit 1
+fi
+
+echo ""
+echo "pivoyager batterylife example"
+echo ""
+echo "batterylife version: 1.0"
+printf "pivoyager "
+pivoyager version
+echo ""
+if [[ ! -d /var/log/pivoyager ]]; then mkdir -p /var/log/pivoyager; fi
+date=$(date)
+echo $date > /var/log/pivoyager/batterylife.start
+
+while true; do
+
+  checkState
+
+  if [[ $state == "Battery" ]]; then
+    oldstatus=$status
+    status=$(pivoyager status battery & pivoyager status voltage)
+    date=$(date)
+    echo $date > /var/log/pivoyager/batterylife.end
+    echo "."
+  fi
+
+  sleep 5
+
+done
