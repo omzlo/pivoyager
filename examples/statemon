@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# statemon v1.0 by Robbie Ferguson // The Bald Nerd
+# statemon v1.1 by Robbie Ferguson // The Bald Nerd
 # https://baldnerd.com || https://nemslinux.com
 # Monitors the state of the PiVoyager on a 5 second timer
 # Outputs the state if it changes, but rests if not
@@ -25,8 +25,7 @@ function checkState {
   fi
 }
 
-test=$(pivoyager version 2>&1 | grep -i 'not found')
-if [[ $test != '' ]]; then
+if [[ $(pivoyager version 2>&1 | grep -i 'not found') != '' ]]; then
   echo "pivoyager was not found in your path."
   echo "Please install it and try again."
   exit 1
@@ -34,6 +33,9 @@ fi
 
 echo ""
 echo "pivoyager statemon example"
+echo ""
+echo "statemon version: 1.1"
+printf "pivoyager "
 pivoyager version
 echo ""
 
@@ -45,22 +47,24 @@ while true; do
     oldstatus=$status
     status=$(pivoyager status battery)
     if [[ $oldstatus != $status ]]; then
-      echo $status
+      echo "$status"
       # Place your commands here for when power switches to USB
 
 
       # End of your commands
+      echo ""
     fi
 
   elif [[ $state == "Battery" ]]; then
     oldstatus=$status
     status=$(pivoyager status battery & pivoyager status voltage)
     if [[ $oldstatus != $status ]]; then
-      echo $status
+      echo "$status"
       # Place your commands here for when power switches to Battery
 
 
       # End of your commands
+      echo ""
     fi
 
   fi
