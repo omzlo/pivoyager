@@ -1,0 +1,74 @@
+#!/bin/bash
+
+# statemon v1.1 by Robbie Ferguson // The Bald Nerd
+# https://baldnerd.com || https://nemslinux.com
+# Monitors the state of the PiVoyager on a 5 second timer
+# Outputs the state if it changes, but rests if not
+#
+# This is an example scripts and does not actually perform any action
+# Feel free to place your own commands in the appropriate sections
+#
+# I'm assuming pivoyager is in your path. Ajust if needed.
+
+function checkState {
+  output=$(pivoyager status flags | grep "pg")
+  oldstate=$state
+  if [[ ${output} != "" ]]; then
+    state="USB"
+  else
+    state="Battery"
+  fi
+  if [[ $oldstate == "" ]]; then
+    echo "Current State: $state"
+  elif [[ $oldstate != $state ]]; then
+    echo "State Changed to $state"
+  fi
+}
+
+if [[ $(pivoyager version 2>&1 | grep -i 'not found') != '' ]]; then
+  echo "pivoyager was not found in your path."
+  echo "Please install it and try again."
+  exit 1
+fi
+
+echo ""
+echo "pivoyager statemon example"
+echo ""
+echo "statemon version: 1.1"
+printf "pivoyager "
+pivoyager version
+echo ""
+
+while true; do
+
+  checkState
+
+  if [[ $state == "USB" ]]; then
+    oldstatus=$status
+    status=$(pivoyager status battery)
+    if [[ $oldstatus != $status ]]; then
+      echo "$status"
+      # Place your commands here for when power switches to USB
+
+
+      # End of your commands
+      echo ""
+    fi
+
+  elif [[ $state == "Battery" ]]; then
+    oldstatus=$status
+    status=$(pivoyager status battery & pivoyager status voltage)
+    if [[ $oldstatus != $status ]]; then
+      echo "$status"
+      # Place your commands here for when power switches to Battery
+
+
+      # End of your commands
+      echo ""
+    fi
+
+  fi
+
+  sleep 5
+
+done
